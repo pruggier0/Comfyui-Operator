@@ -1,0 +1,37 @@
+apiVersion: comfy.redhat.com/v1alpha1
+kind: ComfyUI
+metadata:
+  labels:
+    app.kubernetes.io/name: comfyui-operator
+    app.kubernetes.io/managed-by: kustomize
+  name: comfyui-test
+spec:
+  # ComfyUI container image
+  image: yanwk/comfyui-boot:latest
+
+  # Number of replicas
+  replicas: 1
+
+  # Resource requirements
+  resources:
+    requests:
+      cpu: "1"
+      memory: "2Gi"
+    limits:
+      cpu: "2"
+      memory: "4Gi"
+
+  # Storage configuration
+  storage:
+    size: "10Gi"
+    accessMode: ReadWriteOnce
+    # storageClassName: standard  # uncomment to use specific storage class
+
+  # Optional: Download models from HuggingFace
+  # Uncomment to test model downloads
+  # models:
+  #   huggingFace:
+  #     models:
+  #     - repository: "runwayml/stable-diffusion-v1-5"
+  #       type: "checkpoints"
+  #       filename: "v1-5-pruned-emaonly.safetensors"

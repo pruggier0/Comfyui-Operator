@@ -1,0 +1,11 @@
+apiVersion: comfy.redhat.com/v1alpha1
+kind: ComfyUI
+metadata:
+  name: comfyui-storage-test
+  namespace: default
+spec:
+  image: localhost/comfyui:latest
+  replicas: 1
+  storage:
+    size: 5Gi
+    accessMode: ReadWriteOnce

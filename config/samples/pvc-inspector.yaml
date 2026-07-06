@@ -1,0 +1,17 @@
+apiVersion: v1
+kind: Pod
+metadata:
+  name: pvc-inspector
+  namespace: default
+spec:
+  containers:
+  - name: inspector
+    image: busybox
+    command: ["sleep", "3600"]
+    volumeMounts:
+    - name: models
+      mountPath: /models
+  volumes:
+  - name: models
+    persistentVolumeClaim:
+      claimName: comfyui-test-storage

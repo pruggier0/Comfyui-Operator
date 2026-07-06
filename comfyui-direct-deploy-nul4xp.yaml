@@ -1,0 +1,162 @@
+---
+# Persistent storage for models, custom nodes, and outputs
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: comfyui-storage
+  namespace: ephemeral-nul4xp
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 5Gi
+
+---
+# ComfyUI application deployment
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: comfyui-ephemeral
+  namespace: ephemeral-nul4xp
+  labels:
+    app: comfyui-ephemeral
+    app.kubernetes.io/name: comfyui
+    app.kubernetes.io/instance: comfyui-ephemeral
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: comfyui-ephemeral
+  template:
+    metadata:
+      labels:
+        app: comfyui-ephemeral
+    spec:
+      # Pod security context for OpenShift compatibility - let OpenShift assign UID/GID
+      securityContext: {}
+      containers:
+      - name: comfyui
+        image: image-registry.openshift-image-registry.svc:5000/ephemeral-nul4xp/comfyui-cpu:latest
+        imagePullPolicy: Always
+        # Configure ComfyUI Manager: disable security check and skip uv
+        env:
+        - name: COMFYUI_MANAGER_SKIP_SECURITY_CHECK
+          value: "true"
+        - name: HOME
+          value: "/tmp"
+        # Override entrypoint to force CPU mode
+        command: ["/bin/bash", "-c"]
+        args:
+        - |
+          set -e
+          echo "=== Setting up ComfyUI persistent storage ==="
+          mkdir -p /app/ComfyUI/models/checkpoints /app/ComfyUI/models/vae /app/ComfyUI/models/loras /app/ComfyUI/models/embeddings /app/ComfyUI/models/controlnet /app/ComfyUI/models/clip /app/ComfyUI/models/clip_vision /app/ComfyUI/models/text_encoders /app/ComfyUI/models/diffusion_models /app/ComfyUI/models/unet /app/ComfyUI/models/upscale_models /app/ComfyUI/models/hypernetworks /app/ComfyUI/models/style_models /app/ComfyUI/user /app/ComfyUI/output /app/ComfyUI/input /app/ComfyUI/temp /app/ComfyUI/custom_nodes
+          echo "✓ Directory structure created"
+          echo "=== Installing custom node dependencies ==="
+          custom_nodes_with_deps=0
+          for node_dir in /app/ComfyUI/custom_nodes/*; do
+            if [ ! -d "$node_dir" ]; then continue; fi
+            node_name=$(basename "$node_dir")
+            if [ -f "$node_dir/requirements.txt" ]; then
+              echo "→ Installing dependencies for: $node_name"
+              pip install --no-cache-dir -r "$node_dir/requirements.txt" || echo "⚠ Warning: Failed to install dependencies for $node_name"
+              custom_nodes_with_deps=$((custom_nodes_with_deps + 1))
+            fi
+            if [ -f "$node_dir/install.py" ]; then
+              echo "→ Running install script for: $node_name"
+              (cd "$node_dir" && python install.py) || echo "⚠ Warning: install.py failed for $node_name"
+            fi
+          done
+          if [ $custom_nodes_with_deps -eq 0 ]; then
+            echo "✓ No custom node dependencies to install"
+          else
+            echo "✓ Installed dependencies for $custom_nodes_with_deps custom node(s)"
+          fi
+          echo "=== Starting ComfyUI in CPU mode ==="
+          exec python main.py --listen 0.0.0.0 --port 8188 --enable-manager --cpu
+        ports:
+        - containerPort: 8188
+          name: http
+          protocol: TCP
+        # Container security context
+        securityContext:
+          allowPrivilegeEscalation: false
+          capabilities:
+            drop:
+            - ALL
+          runAsNonRoot: true
+        # CPU-only resource limits (ratio constrained: CPU max 10x, memory max 2x)
+        resources:
+          requests:
+            cpu: "100m"      # 100 millicores
+            memory: "4Gi"    # 4 GB
+          limits:
+            cpu: "1000m"     # 1 core (10x ratio)
+            memory: "8Gi"    # 8 GB (2x ratio)
+        # Mount persistent storage
+        volumeMounts:
+        - name: models-storage
+          mountPath: /app/ComfyUI/models
+          subPath: models
+        - name: models-storage
+          mountPath: /app/ComfyUI/custom_nodes
+          subPath: custom_nodes
+        - name: models-storage
+          mountPath: /app/ComfyUI/user
+          subPath: user
+        - name: models-storage
+          mountPath: /app/ComfyUI/output
+          subPath: output
+        - name: models-storage
+          mountPath: /app/ComfyUI/input
+          subPath: input
+        - name: models-storage
+          mountPath: /app/ComfyUI/temp
+          subPath: temp
+      volumes:
+      - name: models-storage
+        persistentVolumeClaim:
+          claimName: comfyui-storage
+
+---
+# Service for internal networking
+apiVersion: v1
+kind: Service
+metadata:
+  name: comfyui-ephemeral
+  namespace: ephemeral-nul4xp
+  labels:
+    app: comfyui-ephemeral
+    app.kubernetes.io/name: comfyui
+    app.kubernetes.io/instance: comfyui-ephemeral
+spec:
+  type: ClusterIP
+  selector:
+    app: comfyui-ephemeral
+  ports:
+  - name: http
+    port: 8188
+    targetPort: 8188
+    protocol: TCP
+
+---
+# OpenShift Route for external access
+apiVersion: route.openshift.io/v1
+kind: Route
+metadata:
+  name: comfyui-ephemeral
+  namespace: ephemeral-nul4xp
+  labels:
+    app: comfyui-ephemeral
+spec:
+  to:
+    kind: Service
+    name: comfyui-ephemeral
+    weight: 100
+  port:
+    targetPort: http
+  tls:
+    termination: edge
+    insecureEdgeTerminationPolicy: Redirect
+  wildcardPolicy: None

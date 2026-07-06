@@ -1,0 +1,45 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: comfyui-setup-scripts
+  namespace: default
+data:
+  setup-storage.sh: |
+    #!/bin/sh
+    set -e
+    echo "=== Setting up ComfyUI persistent storage ==="
+
+    # Create all required model subdirectories
+    # These correspond to ComfyUI's expected model organization
+    mkdir -p /mnt/models/checkpoints \
+             /mnt/models/vae \
+             /mnt/models/loras \
+             /mnt/models/embeddings \
+             /mnt/models/controlnet \
+             /mnt/models/clip \
+             /mnt/models/clip_vision \
+             /mnt/models/text_encoders \
+             /mnt/models/diffusion_models \
+             /mnt/models/unet \
+             /mnt/models/upscale_models \
+             /mnt/models/hypernetworks \
+             /mnt/models/style_models
+
+    # Create custom_nodes directory for extensions
+    mkdir -p /mnt/custom_nodes
+
+    # Create directories for ComfyUI Manager state and user data
+    mkdir -p /mnt/user      # Manager config, databases, settings
+    mkdir -p /mnt/output    # Generated images
+    mkdir -p /mnt/input     # Uploaded images
+    mkdir -p /mnt/temp      # Temporary files
+
+    # Note: Permissions are handled by fsGroup in pod security context
+    # No need for chmod when running in OpenShift with proper fsGroup
+
+    echo "✓ Model directories created successfully!"
+    ls -la /mnt/models
+    echo "✓ Custom nodes directory created!"
+    ls -la /mnt/custom_nodes
+    echo "✓ User data directories created!"
+    ls -la /mnt/user /mnt/output /mnt/input /mnt/temp

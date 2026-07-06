@@ -1,0 +1,48 @@
+apiVersion: comfy.redhat.com/v1alpha1
+kind: ComfyUI
+metadata:
+  name: comfyui-test
+  namespace: default
+spec:
+  # CPU-only ComfyUI image loaded into kind
+  image: "localhost/comfyui-cpu:latest"
+
+  # Number of replicas
+  replicas: 1
+
+  # Resource requests and limits for CPU-only workload
+  resources:
+    requests:
+      cpu: "100m"
+      memory: "512Mi"
+    limits:
+      cpu: "1000m"
+      memory: "2Gi"
+
+  # Persistent storage configuration
+  storage:
+    # Size of the persistent volume
+    size: "5Gi"
+
+    # Access mode
+    accessMode: ReadWriteOnce
+
+    # Storage class - use standard for kind
+    storageClassName: "standard"
+
+  # OAuth2 configuration for FileBrowser authentication
+  oauth2:
+    # Provider: github, google, or oidc
+    provider: "google"
+
+    # OAuth2 Client ID
+    clientID: "972157929128-8e05eatpuckf4haqmj5hgfoi9rlhlm1n.apps.googleusercontent.com"
+
+    # Reference to secret containing OAuth2 client secret
+    clientSecretRef:
+      name: oauth2-client-secret
+      key: client-secret
+
+    # Allowed email addresses (optional - if empty, any authenticated user is allowed)
+    allowedEmails:
+      - "user@example.com"

@@ -1,0 +1,10 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(podman save *)",
+      "Bash(minikube image *)",
+      "Bash(minikube ssh *)",
+      "Bash(kubectl delete *)"
+    ]
+  }
+}

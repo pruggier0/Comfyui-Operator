@@ -1,0 +1,45 @@
+apiVersion: comfy.redhat.com/v1alpha1
+kind: ComfyUI
+metadata:
+  name: comfyui-oauth-google
+  namespace: default
+spec:
+  # CPU-only ComfyUI image
+  image: "image-registry.openshift-image-registry.svc:5000/default/comfyui-cpu:latest"
+
+  replicas: 1
+  serviceType: ClusterIP
+  enableGPU: false
+
+  # Resource configuration
+  resources:
+    requests:
+      cpu: "100m"
+      memory: "4Gi"
+    limits:
+      cpu: "1000m"
+      memory: "8Gi"
+
+  # Persistent storage
+  storage:
+    size: "50Gi"
+    storageClassName: "local-path"
+    accessMode: ReadWriteOnce
+
+  # OAuth2 Configuration for Google Authentication
+  oauth2:
+    provider: google
+    clientID: "972157929128-8e05eatpuckf4haqmj5hgfoi9rlhlm1n.apps.googleusercontent.com"
+    clientSecretRef:
+      name: google-oauth-secret
+      key: client-secret
+
+    # Optional: Uncomment to restrict access to specific email addresses
+    # allowedEmails:
+    # - "alice@example.com"
+    # - "bob@example.com"
+
+    # Optional: Uncomment to restrict access to specific email domains
+    # allowedDomains:
+    # - "example.com"
+    # - "yourcompany.com"
