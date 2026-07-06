@@ -1,18 +1,33 @@
 # comfyui-operator
-// TODO(user): Add simple overview of use/purpose
+ComfyUI-Operator is a Kubernetes operator designed to make it easy to deploy and run ComfyUI on Kubernetes or OpenShift. 
 
 ## Description
-// TODO(user): An in-depth paragraph about your project and overview of use
+ComfyUI is a powerful node-based UI for Stable Diffusion and other generative AI models. Running it on Kubernetes typically requires hand-crafting several tightly coupled resources: a Deployment with GPU tolerations and resource limits, a PersistentVolumeClaim for models and 
+outputs, a Service, and an ingress resource that varies by platform (OpenShift Route vs. Gateway API HTTPRoute). Add authentication and you're managing an OAuth2 proxy sidecar on top of all that.
+This operator collapses that complexity into a single ComfyUI custom resource. It:
+ - Provisions storage automatically — creates and manages a PVC with configurable size, storage class, and access mode. Delete the CR and the PVC is garbage-collected via owner references.
+ - Detects your platform's ingress API — auto-discovers whether the cluster supports OpenShift Routes or the Kubernetes Gateway API and creates the appropriate resource. On vanilla clusters with neither, it falls back to ClusterIP-only.
+ - Makes GPU scheduling trivial — set enableGPU: true and gpuCount: N and the operator injects nvidia.com/gpu resource limits into the pod spec.
+ - Provides built-in OAuth2 authentication — optionally deploys an OAuth2 Proxy sidecar supporting GitHub, Google, and generic OIDC providers with email and domain allowlists.
+ - Manages the full lifecycle idempotently — the controller converges Deployments, Services, PVCs, Routes/HTTPRoutes, and Secrets to match the desired state on every reconciliation loop.
+
 
 ## Getting Started
 
 ### Prerequisites
-- go version v1.24.0+
-- docker version 17.03+.
-- kubectl version v1.11.3+.
-- Access to a Kubernetes v1.11.3+ cluster.
+- go version v1.26.0+
+- podman or docker version 17.03+.
+- kubectl/oc version v1.11.3+.
+- Access to a Kubernetes v1.11.3+ or OpenShift 4.x+ cluster.
 
 ### To Deploy on the cluster
+
+**Install the CRDs into the cluster:**
+
+```sh
+make install
+```
+
 **Build and push your image to the location specified by `IMG`:**
 
 ```sh
@@ -23,11 +38,7 @@ make docker-build docker-push IMG=<some-registry>/comfyui-operator:tag
 And it is required to have access to pull the image from the working environment.
 Make sure you have the proper permission to the registry if the above commands don’t work.
 
-**Install the CRDs into the cluster:**
-
-```sh
-make install
-```
+To use podman instead of docker, add `CONTAINER_TOOL=podman` to the build command.
 
 **Deploy the Manager to the cluster with the image specified by `IMG`:**
 
@@ -38,12 +49,25 @@ make deploy IMG=<some-registry>/comfyui-operator:tag
 > **NOTE**: If you encounter RBAC errors, you may need to grant yourself cluster-admin
 privileges or be logged in as admin.
 
-**Create instances of your solution**
-You can apply the samples (examples) from the config/sample:
+**Build and push the ComfyUI application image:**
+
+The operator manages ComfyUI instances, but the application image must be built and pushed separately. Dockerfiles are provided in `test-image/`.
 
 ```sh
-kubectl apply -k config/samples/
+docker build -t <some-registry>/comfyui-cpu:latest -f test-image/Dockerfile test-image/
+docker push <some-registry>/comfyui-cpu:latest
 ```
+
+> A GPU Dockerfile is also available at `test-image/Dockerfile.gpu`.
+
+**Create instances of your solution**
+You can apply the samples (examples) from the config/samples:
+
+```sh
+kubectl apply -f config/samples/openshift-cpu-simple.yaml
+```
+
+See `config/samples/` for additional examples including GPU, OAuth2, and custom storage configurations.
 
 >**NOTE**: Ensure that the samples has default values to test it out.
 
