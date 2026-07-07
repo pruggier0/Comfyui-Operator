@@ -179,8 +179,8 @@ func LoadImageToKindClusterWithName(name string) error {
 		if err != nil {
 			return fmt.Errorf("failed to create temp file: %w", err)
 		}
-		defer os.Remove(archive.Name())
-		archive.Close()
+		defer func() { _ = os.Remove(archive.Name()) }()
+		_ = archive.Close()
 
 		cmd := exec.Command("podman", "save", "-o", archive.Name(), name)
 		if _, err := Run(cmd); err != nil {

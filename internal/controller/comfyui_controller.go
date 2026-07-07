@@ -30,11 +30,6 @@ import (
 	comfyv1alpha1 "github.com/comfyui-operator/api/v1alpha1"
 )
 
-const (
-	// comfyuiFinalizer is added to ComfyUI resources to handle cleanup
-	comfyuiFinalizer = "comfy.redhat.com/finalizer"
-)
-
 // ComfyUIReconciler reconciles a ComfyUI object
 type ComfyUIReconciler struct {
 	client.Client
