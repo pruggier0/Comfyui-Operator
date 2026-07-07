@@ -1,9 +1,0 @@
-apiVersion: comfy.redhat.com/v1alpha1
-kind: ComfyUI
-metadata:
-  labels:
-    app.kubernetes.io/name: comfyui-operator
-    app.kubernetes.io/managed-by: kustomize
-  name: comfyui-sample
-spec:
-  # TODO(user): Add fields here

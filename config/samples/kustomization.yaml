@@ -1,4 +1,4 @@
 ## Append samples of your project ##
 resources:
-- comfy_v1alpha1_comfyui.yaml
+- minikube-comfyui.yaml
 # +kubebuilder:scaffold:manifestskustomizesamples

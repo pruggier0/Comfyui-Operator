@@ -1,0 +1,39 @@
+apiVersion: comfy.redhat.com/v1alpha1
+kind: ComfyUI
+metadata:
+  name: comfyui
+  namespace: default
+spec:
+  # ComfyUI application image
+  # Build and load into minikube:
+  #   docker build -t comfyui-cpu:latest -f test-image/Dockerfile test-image/
+  #   minikube image load comfyui-cpu:latest
+  image: "comfyui-cpu:latest"
+
+  replicas: 1
+  serviceType: ClusterIP
+  enableGPU: false
+
+  resources:
+    requests:
+      cpu: "100m"
+      memory: "512Mi"
+    limits:
+      cpu: "2000m"
+      memory: "4Gi"
+
+  storage:
+    size: "10Gi"
+    storageClassName: "standard"
+    accessMode: ReadWriteOnce
+
+  # Optional: OAuth2 authentication for filebrowser
+  # Uncomment and configure to enable
+  # oauth2:
+  #   provider: "google"
+  #   clientID: "<your-client-id>"
+  #   clientSecretRef:
+  #     name: oauth2-client-secret
+  #     key: client-secret
+  #   allowedEmails:
+  #     - "user@example.com"

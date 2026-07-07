@@ -19,6 +19,8 @@ package controller
 import (
 	"context"
 	"fmt"
+	"strconv"
+	"strings"
 
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
@@ -73,8 +75,8 @@ func (r *ComfyUIReconciler) reconcileDeployment(ctx context.Context, comfyui *co
 				},
 				Spec: corev1.PodSpec{
 					// Node selector for targeting specific nodes (e.g., GPU nodes)
-					NodeSelector: comfyui.Spec.NodeSelector,
-					SecurityContext: r.buildPodSecurityContext(),
+					NodeSelector:    comfyui.Spec.NodeSelector,
+					SecurityContext: r.buildPodSecurityContext(ctx, comfyui),
 					Volumes: []corev1.Volume{
 						{
 							Name: "filebrowser-tmp",
@@ -232,14 +234,29 @@ func (r *ComfyUIReconciler) configureGPU(comfyui *comfyv1alpha1.ComfyUI, deploym
 	return nil
 }
 
-// buildPodSecurityContext returns the appropriate PodSecurityContext for the platform.
-// On OpenShift, the SCC injects fsGroup from the namespace's allocated range.
-// On vanilla Kubernetes, we set fsGroup explicitly for PVC volume permissions.
-func (r *ComfyUIReconciler) buildPodSecurityContext() *corev1.PodSecurityContext {
-	isOpenShift, _, _ := discoverIngressAPIs()
-	if isOpenShift {
-		return &corev1.PodSecurityContext{}
+func (r *ComfyUIReconciler) buildPodSecurityContext(ctx context.Context, comfyui *comfyv1alpha1.ComfyUI) *corev1.PodSecurityContext {
+	log := logf.FromContext(ctx)
+
+	if comfyui.Spec.FSGroup != nil {
+		return &corev1.PodSecurityContext{
+			FSGroup: comfyui.Spec.FSGroup,
+		}
 	}
+
+	// Auto-detect from OpenShift namespace annotation
+	ns := &corev1.Namespace{}
+	if err := r.Get(ctx, types.NamespacedName{Name: comfyui.Namespace}, ns); err == nil {
+		if rangeStr, ok := ns.Annotations["openshift.io/sa.scc.supplemental-groups"]; ok {
+			base := strings.Split(rangeStr, "/")[0]
+			if gid, err := strconv.ParseInt(base, 10, 64); err == nil {
+				log.Info("Using fsGroup from namespace annotation", "fsGroup", gid)
+				return &corev1.PodSecurityContext{
+					FSGroup: ptr.To(gid),
+				}
+			}
+		}
+	}
+
 	return &corev1.PodSecurityContext{
 		FSGroup: ptr.To(int64(1000)),
 	}

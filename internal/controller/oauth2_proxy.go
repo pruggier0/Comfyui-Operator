@@ -57,8 +57,8 @@ func (r *ComfyUIReconciler) addOAuth2Proxy(ctx context.Context, comfyui *comfyv1
 	args := []string{
 		"--http-address=0.0.0.0:4180",
 		"--upstream=http://localhost:8085",
-		"--email-domain=*",      // Will be overridden by allowed emails/domains if specified
-		"--reverse-proxy=true",  // Trust X-Forwarded-* headers from OpenShift router / ingress
+		"--email-domain=*",     // Will be overridden by allowed emails/domains if specified
+		"--reverse-proxy=true", // Trust X-Forwarded-* headers from OpenShift router / ingress
 		"--cookie-secure=true",
 		"--cookie-httponly=true",
 		"--cookie-samesite=lax",

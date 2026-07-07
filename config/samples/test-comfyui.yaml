@@ -1,8 +1,0 @@
-apiVersion: comfy.redhat.com/v1alpha1
-kind: ComfyUI
-metadata:
-  name: comfyui-test
-  namespace: default
-spec:
-  image: localhost/comfyui:latest
-  replicas: 1

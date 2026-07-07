@@ -12,6 +12,51 @@ This operator collapses that complexity into a single ComfyUI custom resource. I
  - Manages the full lifecycle idempotently — the controller converges Deployments, Services, PVCs, Routes/HTTPRoutes, and Secrets to match the desired state on every reconciliation loop.
 
 
+## CRD Reference
+
+The `ComfyUI` custom resource accepts the following fields under `spec`:
+
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| `image` | string | *(required)* | Container image for the ComfyUI application |
+| `replicas` | int | `1` | Number of pod replicas |
+| `resources` | [ResourceRequirements](https://kubernetes.io/docs/concepts/configuration/manage-resources-containers/) | none | CPU/memory requests and limits |
+| `serviceType` | string | `ClusterIP` | Kubernetes Service type (`ClusterIP`, `NodePort`, `LoadBalancer`) |
+| `enableGPU` | bool | `false` | Adds `nvidia.com/gpu` resource limits to the pod |
+| `gpuCount` | int | `1` | Number of GPUs to request (only used when `enableGPU: true`) |
+| `fsGroup` | int | auto-detected | Pod `fsGroup` for volume permissions. Auto-detected from namespace annotations on OpenShift, falls back to `1000` |
+| `nodeSelector` | map | none | Constrains pods to nodes with matching labels |
+
+**Storage** (`spec.storage`):
+
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| `size` | string | none | PVC size (e.g. `50Gi`) |
+| `storageClassName` | string | cluster default | Storage class name. Leave empty for cluster default |
+| `accessMode` | string | `ReadWriteOnce` | PVC access mode |
+
+**Gateway** (`spec.gateway`) — Kubernetes Gateway API integration:
+
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| `name` | string | `default-gateway` | Name of the Gateway to attach HTTPRoute to |
+| `namespace` | string | `gateway-system` | Namespace where the Gateway is located |
+| `hostname` | string | `{name}.example.com` | Hostname for the HTTPRoute |
+
+**OAuth2** (`spec.oauth2`) — OAuth2 Proxy sidecar for filebrowser authentication:
+
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| `provider` | string | *(required)* | OAuth2 provider: `github`, `google`, or `oidc` |
+| `clientID` | string | *(required)* | OAuth2 client ID |
+| `clientSecretRef` | SecretKeySelector | *(required)* | Reference to a Secret containing the client secret (key: `client-secret`) |
+| `issuerURL` | string | none | OIDC issuer URL (required only for `oidc` provider) |
+| `allowedEmails` | []string | none | List of allowed email addresses. If empty, any authenticated user is allowed |
+| `allowedDomains` | []string | none | List of allowed email domains (e.g. `example.com`) |
+| `cookieSecretRef` | SecretKeySelector | auto-generated | Reference to a Secret for the cookie secret. If omitted, one is generated automatically |
+
+Additional fields: `volumeMounts` and `volumes` can be used to add custom volume mounts beyond the operator-managed storage.
+
 ## Getting Started
 
 ### Prerequisites
@@ -64,10 +109,14 @@ docker push <some-registry>/comfyui-cpu:latest
 You can apply the samples (examples) from the config/samples:
 
 ```sh
-kubectl apply -f config/samples/openshift-cpu-simple.yaml
+# Minikube
+kubectl apply -f config/samples/minikube-comfyui.yaml
+
+# OpenShift
+oc apply -f config/samples/openshift-comfyui.yaml
 ```
 
-See `config/samples/` for additional examples including GPU, OAuth2, and custom storage configurations.
+See the sample files for GPU, OAuth2, and storage configuration options.
 
 >**NOTE**: Ensure that the samples has default values to test it out.
 
@@ -89,6 +138,62 @@ make uninstall
 ```sh
 make undeploy
 ```
+
+### To Install Locally 
+
+**Setup a local minikube cluster (Reccomend using QEMU)** 
+```sh 
+minikube start --driver=qemu -p <cluster-name>
+``` 
+
+**Install the CRDS**
+```sh 
+make install 
+make run 
+``` 
+
+**In another terminal session, run** 
+```sh
+kubectl apply -f path/to/file.yaml
+```
+
+**port forwardin the application**
+First find the service:
+```sh 
+kubectl get svc
+``` 
+The port forward the ComfyUI service 
+
+```sh 
+kubectl port-forward svc/<comfyui-service-name> 8188:8188
+``` 
+
+We also need to port forward the Oauth2 proxy to get to filebrowser
+```sh 
+kubectl port-forward svc/<comfyui-service-name> 4180:4180
+``` 
+
+ComfyUI and filebrowser can be accesses from http://localhost:8188, and from http://localhost:4180 respectively 
+
+
+**TODOS**
+
+* Run more multi-tenant tests on a cluster 
+* Test more on remote Kubernetes clusters  
+* Validate functionality on GPU cluster with multiple users 
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 ## Project Distribution
 
@@ -133,6 +238,15 @@ if you create webhooks, you need to use the above command with
 the '--force' flag and manually ensure that any custom configuration
 previously added to 'dist/chart/values.yaml' or 'dist/chart/manager/manager.yaml'
 is manually re-applied afterwards.
+
+## Known Issues & Limitations
+
+- **fsGroup on OpenShift 4.22+**: Pod Security Admission (PSA) replaces SCC and does not inject `fsGroup` automatically. The operator auto-detects from the namespace annotation `openshift.io/sa.scc.supplemental-groups`. If the annotation is missing, it falls back to `1000`. Set `spec.fsGroup` in the CR to override.
+- **subPath volume permissions**: PVC subPath mounts are created with root ownership. The operator sets `fsGroup` on the pod security context to grant write access via group permissions.
+- **Go 1.26 required**: `make install` and `make test` require Go 1.26.0+. If your system has an older version, set `export GOTOOLCHAIN=auto` or apply CRDs directly: `oc apply -f config/crd/bases/comfy.redhat.com_comfyuis.yaml`
+- **TLS when pushing to internal registry**: Port-forwarding the OpenShift internal registry requires `--tls-verify=false` for podman/docker push commands.
+- **OAuth2 protects filebrowser only**: The OAuth2 Proxy sidecar sits in front of filebrowser (port 8085), not ComfyUI (port 8188). ComfyUI is accessed directly without authentication.
+- **Route/Gateway scheme registration**: On clusters where the Route or Gateway API group is detected but not registered in the controller's scheme, the operator skips ingress creation gracefully and logs a message.
 
 ## Contributing
 // TODO(user): Add detailed information on how you would like others to contribute to this project

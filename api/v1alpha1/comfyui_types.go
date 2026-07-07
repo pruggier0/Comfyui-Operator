@@ -54,6 +54,10 @@ type ComfyUISpec struct {
 	// OAuth2 configuration for FileBrowser authentication
 	// +optional
 	OAuth2 *OAuth2Config `json:"oauth2,omitempty"`
+	// FSGroup sets the pod's fsGroup security context for volume permissions.
+	// If not specified, auto-detected from the namespace on OpenShift or defaults to 1000.
+	// +optional
+	FSGroup *int64 `json:"fsGroup,omitempty"`
 }
 
 type ComfyUIStorage struct {

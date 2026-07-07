@@ -3,7 +3,7 @@ apiVersion: apiextensions.k8s.io/v1
 kind: CustomResourceDefinition
 metadata:
   annotations:
-    controller-gen.kubebuilder.io/version: v0.18.0
+    controller-gen.kubebuilder.io/version: v0.21.0
   name: comfyuis.comfy.redhat.com
 spec:
   group: comfy.redhat.com
@@ -56,6 +56,12 @@ spec:
                 description: EnableGPU enables GPU support and adds nvidia.com/gpu
                   resource limits
                 type: boolean
+              fsGroup:
+                description: |-
+                  FSGroup sets the pod's fsGroup security context for volume permissions.
+                  If not specified, auto-detected from the namespace on OpenShift or defaults to 1000.
+                format: int64
+                type: integer
               gateway:
                 description: Gateway configuration for Kubernetes Gateway API HTTPRoute
                 properties:

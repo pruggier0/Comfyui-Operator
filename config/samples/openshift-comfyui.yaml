@@ -1,72 +1,54 @@
 apiVersion: comfy.redhat.com/v1alpha1
 kind: ComfyUI
 metadata:
-  name: comfyui-openshift
+  name: comfyui
   namespace: default
 spec:
-  # ComfyUI container image - using custom GPU-enabled image
-  # Build and push this image from test-image/ directory
-  image: "image-registry.openshift-image-registry.svc:5000/default/comfyui:latest"
+  # ComfyUI application image from the OpenShift internal registry
+  # Build and push:
+  #   podman build -t comfyui-cpu:latest -f test-image/Dockerfile test-image/
+  #   podman tag comfyui-cpu:latest <registry-route>/<namespace>/comfyui-cpu:latest
+  #   podman push <registry-route>/<namespace>/comfyui-cpu:latest
+  image: "image-registry.openshift-image-registry.svc:5000/<namespace>/comfyui-cpu:latest"
 
-  # Number of replicas
   replicas: 1
-
-  # Service type - ClusterIP is default and recommended for OpenShift
-  # Use ClusterIP + Route for external access (OpenShift best practice)
   serviceType: ClusterIP
+  enableGPU: false
 
-  # Enable GPU support
-  enableGPU: true
-  gpuCount: 1
+  # Uncomment for GPU workloads
+  # enableGPU: true
+  # gpuCount: 1
 
-  # Resource requests and limits
   resources:
     requests:
+      cpu: "100m"
+      memory: "4Gi"
+    limits:
       cpu: "2000m"
       memory: "8Gi"
-    limits:
-      cpu: "8000m"
-      memory: "16Gi"
-      # GPU limits added automatically when enableGPU: true
 
-  # Persistent storage configuration
   storage:
-    # Size of the persistent volume
     size: "50Gi"
-
-    # Storage class - use OpenShift's default or specify one
-    # Common OpenShift storage classes: gp2, gp3, ocs-storagecluster-ceph-rbd
-    # Leave empty to use cluster default
     storageClassName: ""
-
-    # Access mode - ReadWriteOnce is recommended for block storage
     accessMode: ReadWriteOnce
 
----
-# Optional: OpenShift Route for external access
-# Deploy this after the ComfyUI instance is running
-apiVersion: route.openshift.io/v1
-kind: Route
-metadata:
-  name: comfyui-openshift
-  namespace: default
-  labels:
-    app: comfyui-openshift
-spec:
-  # Hostname for the route (optional - OpenShift will generate one if omitted)
-  # host: comfyui.apps.mycluster.example.com
+  # Optional: constrain pods to specific nodes
+  # nodeSelector:
+  #   kubernetes.io/hostname: <node-name>
 
-  to:
-    kind: Service
-    name: comfyui-openshift
-    weight: 100
+  # Optional: override auto-detected fsGroup
+  # fsGroup: 1000
 
-  port:
-    targetPort: http
-
-  # Enable TLS (recommended for production)
-  tls:
-    termination: edge
-    insecureEdgeTerminationPolicy: Redirect
-
-  wildcardPolicy: None
+  # Optional: OAuth2 authentication for filebrowser
+  # Create the secret first:
+  #   oc create secret generic oauth2-client-secret --from-literal=client-secret=<your-secret>
+  # oauth2:
+  #   provider: "google"
+  #   clientID: "<your-client-id>"
+  #   clientSecretRef:
+  #     name: oauth2-client-secret
+  #     key: client-secret
+  #   allowedEmails:
+  #     - "user@example.com"
+  #   allowedDomains:
+  #     - "example.com"

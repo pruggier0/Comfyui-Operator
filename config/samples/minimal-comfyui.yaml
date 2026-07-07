@@ -1,8 +1,0 @@
-apiVersion: comfy.redhat.com/v1alpha1
-kind: ComfyUI
-metadata:
-  name: comfyui-minimal
-  namespace: default
-spec:
-  image: ghcr.io/ai-dock/comfyui:cpu-v2-latest
-  replicas: 1

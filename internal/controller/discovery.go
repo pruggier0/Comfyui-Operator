@@ -20,6 +20,8 @@ import (
 	"context"
 	"fmt"
 
+	routev1 "github.com/openshift/api/route/v1"
+	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/client-go/discovery"
 	"sigs.k8s.io/controller-runtime/pkg/client/config"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
@@ -75,20 +77,28 @@ func (r *ComfyUIReconciler) reconcileIngress(ctx context.Context, comfyui *comfy
 
 	// Prefer OpenShift Route if available (native to OpenShift)
 	if hasRoute {
-		if err := r.reconcileRoute(ctx, comfyui); err != nil {
-			return fmt.Errorf("failed to reconcile Route: %w", err)
+		if !r.Scheme.Recognizes(schema.GroupVersionKind{Group: routev1.GroupName, Version: "v1", Kind: "Route"}) {
+			log.Info("Route API discovered but scheme not registered, skipping Route creation")
+		} else {
+			if err := r.reconcileRoute(ctx, comfyui); err != nil {
+				return fmt.Errorf("failed to reconcile Route: %w", err)
+			}
+			log.Info("Route reconciled successfully", "name", comfyui.Name)
+			return nil
 		}
-		log.Info("Route reconciled successfully", "name", comfyui.Name)
-		return nil
 	}
 
 	// Fall back to Gateway API if available
 	if hasGateway {
-		if err := r.reconcileHTTPRoute(ctx, comfyui); err != nil {
-			return fmt.Errorf("failed to reconcile HTTPRoute: %w", err)
+		if !r.Scheme.Recognizes(schema.GroupVersionKind{Group: "gateway.networking.k8s.io", Version: "v1", Kind: "HTTPRoute"}) {
+			log.Info("Gateway API discovered but scheme not registered, skipping HTTPRoute creation")
+		} else {
+			if err := r.reconcileHTTPRoute(ctx, comfyui); err != nil {
+				return fmt.Errorf("failed to reconcile HTTPRoute: %w", err)
+			}
+			log.Info("HTTPRoute reconciled successfully", "name", comfyui.Name)
+			return nil
 		}
-		log.Info("HTTPRoute reconciled successfully", "name", comfyui.Name)
-		return nil
 	}
 
 	// Neither API available - log info but don't fail
