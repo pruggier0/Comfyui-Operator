@@ -57,6 +57,24 @@ The `ComfyUI` custom resource accepts the following fields under `spec`:
 
 Additional fields: `volumeMounts` and `volumes` can be used to add custom volume mounts beyond the operator-managed storage.
 
+## RBAC Requirements
+
+The operator requires a `ClusterRole` with the following permissions. These are auto-generated from controller annotations via `make manifests`.
+
+| API Group | Resources | Verbs | Why |
+|-----------|-----------|-------|-----|
+| `comfy.redhat.com` | `comfyuis`, `comfyuis/status`, `comfyuis/finalizers` | get, list, watch, create, update, patch, delete | Manage the ComfyUI custom resource lifecycle |
+| `apps` | `deployments` | get, list, watch, create, update, patch, delete | Create and update the ComfyUI + filebrowser deployment |
+| `core` | `services` | get, list, watch, create, update, patch, delete | Expose ComfyUI and filebrowser ports |
+| `core` | `persistentvolumeclaims` | get, list, watch, create, update, patch, delete | Provision storage for models, outputs, and custom nodes |
+| `core` | `secrets` | get, list, watch, create, update, patch, delete | Manage OAuth2 cookie secrets |
+| `core` | `pods` | get, list, watch | Monitor pod status |
+| `core` | `namespaces` | get, list, watch | Read namespace annotations for fsGroup auto-detection on OpenShift |
+| `route.openshift.io` | `routes` | get, list, watch, create, update, patch, delete | Create OpenShift Routes for external access |
+| `gateway.networking.k8s.io` | `gateways`, `httproutes` | get, list, watch, create, update, patch, delete | Create Gateway API HTTPRoutes on vanilla Kubernetes |
+
+The generated `ClusterRole` is at `config/rbac/role.yaml`. On OpenShift, the operator's service account also needs permission to read namespace annotations — this is included by default.
+
 ## Getting Started
 
 ### Prerequisites
