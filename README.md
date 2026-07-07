@@ -266,6 +266,132 @@ is manually re-applied afterwards.
 - **OAuth2 protects filebrowser only**: The OAuth2 Proxy sidecar sits in front of filebrowser (port 8085), not ComfyUI (port 8188). ComfyUI is accessed directly without authentication.
 - **Route/Gateway scheme registration**: On clusters where the Route or Gateway API group is detected but not registered in the controller's scheme, the operator skips ingress creation gracefully and logs a message.
 
+## Design Decisions
+
+### SubPath Mounts for Storage
+
+The operator mounts specific subdirectories (`models`, `custom_nodes`, `user`, `output`, `input`) from the PVC using subPath mounts rather than mounting the entire PVC at `/app/ComfyUI`. This preserves the ComfyUI application code from the container image while persisting only user data. The trade-off: subPath mounts bypass Kubernetes `fsGroup` ownership changes, so new directories are created as root. The operator compensates by setting `fsGroup` on the pod security context, which grants write access via group permissions.
+
+### fsGroup Auto-Detection
+
+Rather than hardcoding an `fsGroup` value (bad practice — it may collide with other users on the cluster), the operator uses a three-tier approach:
+1. **Explicit**: If `spec.fsGroup` is set in the CR, use it directly
+2. **OpenShift auto-detect**: Read the namespace annotation `openshift.io/sa.scc.supplemental-groups` and use the base GID from the allocated range
+3. **Fallback**: Default to `1000` on vanilla Kubernetes
+
+This is necessary because OpenShift 4.22+ uses Pod Security Admission (PSA) instead of Security Context Constraints (SCCs), and PSA does not auto-inject `fsGroup` like SCCs did.
+
+### OAuth2 Protects Filebrowser Only
+
+The OAuth2 Proxy sidecar sits in front of filebrowser (port 8085), not ComfyUI (port 8188). This is intentional: ComfyUI's web UI uses WebSockets extensively, and adding an authenticating reverse proxy in front of it introduces connection management complexity. Filebrowser is the higher-risk surface (it provides direct filesystem access to models and outputs), so it gets authentication. ComfyUI is accessed directly via its own Route/HTTPRoute.
+
+### Platform-Aware Ingress Discovery
+
+The operator auto-discovers available ingress APIs at reconciliation time using the Kubernetes discovery client:
+- **OpenShift Route** (preferred if available) — native to OpenShift, auto-generates hostnames
+- **Gateway API HTTPRoute** (fallback) — for vanilla Kubernetes clusters with Gateway API
+- **None** — ClusterIP-only, user handles ingress themselves
+
+The operator also guards against API groups that are discovered but not registered in the controller's runtime scheme (e.g., envtest doesn't have Route CRDs). This prevents crashes in test environments.
+
+### Owner References for Garbage Collection
+
+All child resources (PVC, Deployment, Service, Secrets, Routes) carry an owner reference pointing to the ComfyUI CR. When the CR is deleted, Kubernetes garbage-collects all children automatically. This eliminates the need for finalizer-based cleanup and reduces the risk of orphaned resources.
+
+### Filebrowser as a Sidecar
+
+Filebrowser runs as a sidecar container in the same pod as ComfyUI, not as a separate Deployment. This simplifies storage sharing (both containers mount the same PVC) and ensures filebrowser is always co-located with ComfyUI. The filebrowser database is stored on an emptyDir backed by memory (`/tmp`), so it's ephemeral and doesn't need persistent storage.
+
+## Compatibility Matrix
+
+| Platform | Versions Tested | Notes |
+|----------|----------------|-------|
+| OpenShift | 4.22 | PSA-based security; fsGroup auto-detection required |
+| Kubernetes | 1.27+ (Kind) | E2E tested via Kind; Gateway API requires separate installation |
+| Go | 1.26.0+ | Required for building. Set `GOTOOLCHAIN=auto` if system Go is older |
+| Podman | 5.x | Supported via `CONTAINER_TOOL=podman`. Kind requires inotify tuning |
+| Docker | 17.03+ | Default container tool |
+
+**OpenShift-specific behavior:**
+- Routes are auto-created with TLS edge termination
+- fsGroup is auto-detected from namespace annotations
+- Internal registry (`image-registry.openshift-image-registry.svc:5000`) is the typical image source
+
+**Vanilla Kubernetes behavior:**
+- Gateway API HTTPRoutes are created if the Gateway API is installed
+- Falls back to ClusterIP-only if no ingress API is available
+- fsGroup defaults to `1000`
+
+## Troubleshooting
+
+### Permission denied on model directories
+
+**Symptom:** Pod crashes with `Permission denied` on `mkdir` or write operations in `/app/ComfyUI/models`.
+
+**Cause:** SubPath PVC mounts are created with root ownership. The container runs as a non-root user and can't write.
+
+**Fix:** The operator sets `fsGroup` to grant group write access. If it's not working:
+1. Check that the operator is running the latest version (fsGroup auto-detection was added later)
+2. On OpenShift, verify the namespace has the `openshift.io/sa.scc.supplemental-groups` annotation: `oc get ns <namespace> -o yaml | grep supplemental`
+3. Override manually by setting `spec.fsGroup` in the CR
+
+### Pod stuck in ImagePullBackOff
+
+**Symptom:** The ComfyUI pod can't pull the image from the internal registry.
+
+**Cause:** The image doesn't exist in the registry, or the service account lacks pull permissions.
+
+**Fix:**
+1. Verify the image exists: `oc get is -n <namespace>`
+2. Check the image reference matches the internal registry format: `image-registry.openshift-image-registry.svc:5000/<namespace>/<image>:<tag>`
+3. Ensure the service account can pull: `oc policy add-role-to-user system:image-puller system:serviceaccount:<namespace>:default -n <source-namespace>`
+
+### TLS errors when pushing to OpenShift internal registry
+
+**Symptom:** `podman push` fails with certificate errors when pushing to `localhost:5000`.
+
+**Fix:** The internal registry's TLS cert isn't valid for `localhost`. Use `--tls-verify=false`:
+```sh
+oc port-forward -n openshift-image-registry svc/image-registry 5000:5000 &
+podman login --tls-verify=false localhost:5000 -u $(oc whoami) -p $(oc whoami -t)
+podman push --tls-verify=false localhost:5000/<namespace>/<image>:<tag>
+```
+
+### E2E tests fail with "Too many open files"
+
+**Symptom:** `make test-e2e` fails during Kind cluster creation with `Failed to create control group inotify object: Too many open files`.
+
+**Fix:** Increase inotify limits (requires sudo):
+```sh
+sudo sysctl fs.inotify.max_user_watches=1048576
+sudo sysctl fs.inotify.max_user_instances=8192
+```
+
+To make it permanent:
+```sh
+echo 'fs.inotify.max_user_watches = 1048576' | sudo tee /etc/sysctl.d/99-kind.conf
+echo 'fs.inotify.max_user_instances = 8192' | sudo tee -a /etc/sysctl.d/99-kind.conf
+sudo sysctl --system
+```
+
+### Go version mismatch
+
+**Symptom:** `make test` or `make install` fails with `compile: version "go1.26.0" does not match go tool version`.
+
+**Fix:** Your system Go is older than the project requires (1.26.0). Either:
+- Set `export GOTOOLCHAIN=auto` to auto-download the right version
+- Install Go 1.26.0+ from [go.dev](https://go.dev/dl/)
+
+### OAuth2 callback URL mismatch
+
+**Symptom:** OAuth2 login redirects to the wrong URL or returns a redirect_uri_mismatch error.
+
+**Fix:** The operator reads the filebrowser Route's hostname to set the OAuth2 redirect URL. If the Route doesn't exist yet when the Deployment is created, the redirect URL will be missing. Delete the pod to trigger re-reconciliation:
+```sh
+kubectl delete pod -l app=<comfyui-name>
+```
+Also ensure your OAuth2 provider's authorized redirect URI matches: `https://<comfyui-name>-filebrowser-<namespace>.apps.<cluster-domain>/oauth2/callback`
+
 ## Contributing
 // TODO(user): Add detailed information on how you would like others to contribute to this project
 
