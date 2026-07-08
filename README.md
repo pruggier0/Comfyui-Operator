@@ -57,6 +57,42 @@ The `ComfyUI` custom resource accepts the following fields under `spec`:
 
 Additional fields: `volumeMounts` and `volumes` can be used to add custom volume mounts beyond the operator-managed storage.
 
+## OAuth2 Setup (Google)
+
+To enable OAuth2 authentication for filebrowser, you need a Google OAuth client:
+
+1. Go to [Google Cloud Console](https://console.cloud.google.com) → **APIs & Services** → **Credentials**
+2. Click **Create Credentials** → **OAuth client ID**
+3. Application type: **Web application**
+4. Add an authorized redirect URI:
+   ```
+   https://<comfyui-name>-filebrowser-<namespace>.apps.<cluster-domain>/oauth2/callback
+   ```
+5. Copy the **Client ID** and **Client Secret**
+
+Create a Kubernetes Secret with the client secret:
+
+```sh
+kubectl create secret generic oauth2-client-secret \
+  --from-literal=client-secret=<your-client-secret>
+```
+
+Then configure the CR:
+
+```yaml
+spec:
+  oauth2:
+    provider: google
+    clientID: <your-client-id>.apps.googleusercontent.com
+    clientSecretRef:
+      name: oauth2-client-secret
+      key: client-secret
+    allowedEmails:
+      - user@example.com
+```
+
+If `allowedEmails` and `allowedDomains` are both empty, any authenticated user is allowed through.
+
 ## RBAC Requirements
 
 The operator requires a `ClusterRole` with the following permissions. These are auto-generated from controller annotations via `make manifests`.
