@@ -1,0 +1,220 @@
+---
+# vLLM-Omni Deployment Example
+#
+# This example shows how to deploy vLLM-Omni as a standalone service
+# for use with ComfyUI-vLLM-Omni custom nodes or direct API access.
+#
+# BEFORE DEPLOYING:
+# 1. Update the namespace to match your target namespace
+# 2. Choose a model to serve (see MODEL OPTIONS below)
+# 3. Adjust GPU count and memory based on your model size
+# 4. (Optional) Configure node selector for specific GPU nodes
+# 5. Apply with: oc apply -f vllm-omni-example.yaml
+#
+# USAGE:
+# - From ComfyUI nodes: http://vllm-omni:8000/v1
+# - From other namespaces: http://vllm-omni.<namespace>:8000/v1
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: vllm-omni
+  namespace: default  # CHANGE ME: Set to your target namespace
+  labels:
+    app: vllm-omni
+spec:
+  selector:
+    app: vllm-omni
+  ports:
+  - name: http
+    port: 8000
+    targetPort: 8000
+    protocol: TCP
+  type: ClusterIP
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: vllm-cache
+  namespace: default  # CHANGE ME: Set to your target namespace
+  labels:
+    app: vllm-omni
+spec:
+  accessModes:
+  - ReadWriteOnce
+  resources:
+    requests:
+      storage: 50Gi  # Adjust based on model size
+  # CHANGE ME: Set to your storage class (e.g., longhorn, gp3, local-path)
+  storageClassName: longhorn
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: vllm-omni
+  namespace: default  # CHANGE ME: Set to your target namespace
+  labels:
+    app: vllm-omni
+spec:
+  replicas: 1  # Do not increase - vLLM uses stateful model loading
+  selector:
+    matchLabels:
+      app: vllm-omni
+  template:
+    metadata:
+      labels:
+        app: vllm-omni
+    spec:
+      # OPTIONAL: Constrain to specific nodes with GPUs
+      # Uncomment and update with your GPU node hostname or label
+      # nodeSelector:
+      #   kubernetes.io/hostname: gpu-node-1
+      #   # OR use a label like:
+      #   # nvidia.com/gpu.present: "true"
+
+      containers:
+      - name: vllm-omni
+        # vLLM-Omni official image
+        # See: https://docs.vllm.ai/projects/vllm-omni/en/latest/
+        image: vllm/vllm-omni:latest
+
+        # MODEL OPTIONS:
+        # Uncomment ONE of the model configurations below, or add your own
+
+        # Image Generation (Z-Image-Turbo)
+        command:
+          - vllm
+          - serve
+          - Tongyi-MAI/Z-Image-Turbo
+          - --omni
+          - --port
+          - "8000"
+
+        # Multimodal Understanding (Qwen 3 Omni)
+        # command:
+        #   - vllm
+        #   - serve
+        #   - Qwen/Qwen3-Omni-7B-A1B-Instruct
+        #   - --omni
+        #   - --port
+        #   - "8000"
+
+        # Image Editing (Qwen-Image-Edit)
+        # command:
+        #   - vllm
+        #   - serve
+        #   - Qwen/Qwen-Image-Edit
+        #   - --omni
+        #   - --port
+        #   - "8000"
+
+        # Video Generation (Wan)
+        # command:
+        #   - vllm
+        #   - serve
+        #   - Tencent/Wan-3-6B-Turbo
+        #   - --omni
+        #   - --port
+        #   - "8000"
+
+        ports:
+        - containerPort: 8000
+          name: http
+          protocol: TCP
+
+        # OPTIONAL: Add environment variables
+        # env:
+        # - name: HF_TOKEN
+        #   valueFrom:
+        #     secretKeyRef:
+        #       name: huggingface-token
+        #       key: token
+
+        resources:
+          limits:
+            # GPU allocation - adjust based on model requirements
+            # Small models (7B): 1 GPU
+            # Medium models (30B): 2 GPUs
+            # Large models: 3+ GPUs
+            nvidia.com/gpu: 1
+
+            # Memory - adjust based on model size
+            # 7B models: 16-24Gi
+            # 30B models: 48-64Gi
+            memory: 24Gi
+
+            cpu: 4
+          requests:
+            nvidia.com/gpu: 1
+            memory: 16Gi
+            cpu: 2
+
+        volumeMounts:
+        - name: cache
+          mountPath: /root/.cache/huggingface
+
+        # OPTIONAL: Readiness probe
+        # Uncomment to enable health checking
+        # readinessProbe:
+        #   httpGet:
+        #     path: /v1/models
+        #     port: 8000
+        #   initialDelaySeconds: 60
+        #   periodSeconds: 10
+
+        # OPTIONAL: Liveness probe
+        # livenessProbe:
+        #   httpGet:
+        #     path: /v1/models
+        #     port: 8000
+        #   initialDelaySeconds: 120
+        #   periodSeconds: 30
+
+      volumes:
+      - name: cache
+        persistentVolumeClaim:
+          claimName: vllm-cache
+---
+# OPTIONAL: Create an OpenShift Route for external access
+# Uncomment if you need to access vLLM from outside the cluster
+# apiVersion: route.openshift.io/v1
+# kind: Route
+# metadata:
+#   name: vllm-omni
+#   namespace: default  # CHANGE ME
+# spec:
+#   to:
+#     kind: Service
+#     name: vllm-omni
+#   port:
+#     targetPort: http
+#   tls:
+#     termination: edge
+#     insecureEdgeTerminationPolicy: Redirect
+---
+# OPTIONAL: NetworkPolicy for restricting access
+# Uncomment to allow only specific namespaces to access vLLM
+# apiVersion: networking.k8s.io/v1
+# kind: NetworkPolicy
+# metadata:
+#   name: vllm-omni-access
+#   namespace: default  # CHANGE ME
+# spec:
+#   podSelector:
+#     matchLabels:
+#       app: vllm-omni
+#   policyTypes:
+#   - Ingress
+#   ingress:
+#   # Allow from pods in the same namespace
+#   - from:
+#     - podSelector: {}
+#   # Allow from specific namespaces (add more as needed)
+#   - from:
+#     - namespaceSelector:
+#         matchLabels:
+#           name: tenant-a
+#   - from:
+#     - namespaceSelector:
+#         matchLabels:
+#           name: tenant-b
