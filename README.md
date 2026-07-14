@@ -174,6 +174,26 @@ See the sample files for GPU, OAuth2, and storage configuration options.
 
 >**NOTE**: Ensure that the samples has default values to test it out.
 
+**Optional: Deploy vLLM-Omni for accelerated inference**
+
+ComfyUI-vLLM-Omni custom nodes connect to a separate vLLM service for GPU-accelerated model inference. To deploy vLLM-Omni:
+
+```sh
+# Download the example template
+wget https://raw.githubusercontent.com/pruggier0/Comfyui-Operator/main/config/samples/vllm-omni-example.yaml
+
+# Edit the file to:
+# 1. Set your namespace
+# 2. Choose a model (uncomment one of the provided options)
+# 3. Adjust GPU count and memory based on model size
+# 4. Configure storage class
+
+# Deploy
+oc apply -f vllm-omni-example.yaml
+```
+
+The vLLM service will be accessible at `http://vllm-omni:8000/v1` from pods in the same namespace. In ComfyUI-vLLM-Omni nodes, set the URL field to this value.
+
 ### To Uninstall
 **Delete the instances (CRs) from the cluster:**
 
