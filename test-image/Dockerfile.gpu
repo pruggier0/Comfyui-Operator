@@ -19,6 +19,10 @@ WORKDIR /app/ComfyUI
 RUN pip install --no-cache-dir torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu124 && \
     pip install --no-cache-dir -r requirements.txt
 
+# Install vLLM-Omni for multimodal LLM inference (requires vLLM 0.25.0 first)
+RUN pip install --no-cache-dir vllm==0.25.0 && \
+    pip install --no-cache-dir vllm-omni
+
 # Install ComfyUI Manager dependencies (built-in manager)
 RUN pip install --no-cache-dir -r manager_requirements.txt
 
