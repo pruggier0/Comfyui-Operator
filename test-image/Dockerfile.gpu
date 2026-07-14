@@ -4,9 +4,9 @@ ENV DEBIAN_FRONTEND=noninteractive
 
 WORKDIR /app
 
-# Install git, wget, nano, and curl
+# Install git, wget, nano, curl, and build tools for GPU support
 RUN apt-get update && \
-    apt-get install -y git wget nano curl && \
+    apt-get install -y git wget nano curl build-essential gcc g++ && \
     apt-get clean && \
     rm -rf /var/lib/apt/lists/*
 
