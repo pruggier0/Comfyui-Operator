@@ -121,58 +121,137 @@ The generated `ClusterRole` is at `config/rbac/role.yaml`. On OpenShift, the ope
 
 ### To Deploy on the cluster
 
-**Install the CRDs into the cluster:**
+**1. Create a namespace for your deployment:**
+
+```sh
+oc create namespace <namespace-name>
+```
+
+**2. Install the CRDs (cluster-wide):**
 
 ```sh
 make install
 ```
 
-**Build and push your image to the location specified by `IMG`:**
+**3. Update kustomization to use your namespace:**
 
 ```sh
-make docker-build docker-push IMG=<some-registry>/comfyui-operator:tag
+cd config/default
+kustomize edit set namespace <namespace-name>
+cd ../..
 ```
 
-**NOTE:** This image ought to be published in the personal registry you specified.
-And it is required to have access to pull the image from the working environment.
-Make sure you have the proper permission to the registry if the above commands don’t work.
+**4. Build and push the operator image:**
 
-To use podman instead of docker, add `CONTAINER_TOOL=podman` to the build command.
-
-**Deploy the Manager to the cluster with the image specified by `IMG`:**
+For OpenShift clusters, use the internal image registry:
 
 ```sh
-make deploy IMG=<some-registry>/comfyui-operator:tag
+# Get the OpenShift registry URL
+export OCP_REGISTRY=$(oc get route default-route -n openshift-image-registry --template=’{{ .spec.host }}’)
+
+# Login to the registry
+podman login $OCP_REGISTRY -u $(oc whoami) -p $(oc whoami -t)
+
+# Build and push operator image
+make docker-build docker-push IMG=$OCP_REGISTRY/<namespace-name>/comfyui-operator:latest CONTAINER_TOOL=podman
 ```
 
-> **NOTE**: If you encounter RBAC errors, you may need to grant yourself cluster-admin
-privileges or be logged in as admin.
-
-**Build and push the ComfyUI application image:**
-
-The operator manages ComfyUI instances, but the application image must be built and pushed separately. Dockerfiles are provided in `test-image/`.
+For other registries:
 
 ```sh
-docker build -t <some-registry>/comfyui-cpu:latest -f test-image/Dockerfile test-image/
-docker push <some-registry>/comfyui-cpu:latest
+make docker-build docker-push IMG=<registry>/<namespace>/comfyui-operator:tag CONTAINER_TOOL=podman
 ```
 
-> A GPU Dockerfile is also available at `test-image/Dockerfile.gpu`.
+> **NOTE**: Use `CONTAINER_TOOL=docker` if you prefer Docker over Podman.
 
-**Create instances of your solution**
-You can apply the samples (examples) from the config/samples:
+**5. Deploy the operator to the cluster:**
 
 ```sh
-# Minikube
-kubectl apply -f config/samples/minikube-comfyui.yaml
+make deploy IMG=$OCP_REGISTRY/<namespace-name>/comfyui-operator:latest
+```
 
-# OpenShift
+> **NOTE**: If you encounter RBAC errors, you may need to grant yourself cluster-admin privileges or be logged in as admin.
+
+**6. Build and push the ComfyUI application image:**
+
+The operator manages ComfyUI instances, but the application image must be built separately. Dockerfiles are provided in `test-image/`.
+
+```sh
+# CPU version (recommended for testing)
+podman build -t comfyui-cpu:latest -f test-image/Dockerfile test-image/
+podman tag comfyui-cpu:latest $OCP_REGISTRY/<namespace-name>/comfyui-cpu:latest
+podman push $OCP_REGISTRY/<namespace-name>/comfyui-cpu:latest
+```
+
+For GPU workloads:
+
+```sh
+# GPU version
+podman build -t comfyui-gpu:latest -f test-image/Dockerfile.gpu test-image/
+podman tag comfyui-gpu:latest $OCP_REGISTRY/<namespace-name>/comfyui-gpu:latest
+podman push $OCP_REGISTRY/<namespace-name>/comfyui-gpu:latest
+```
+
+**7. (Optional) Create OAuth2 secret if using OAuth2 authentication:**
+
+If your sample CR includes OAuth2 configuration, create the required secret:
+
+```sh
+oc create secret generic oauth2-client-secret \
+  --from-literal=client-secret=<your-google-oauth-client-secret> \
+  -n <namespace-name>
+```
+
+See the [OAuth2 Setup](#oauth2-setup-google) section for details on obtaining credentials.
+
+**8. Deploy a ComfyUI instance:**
+
+Update the sample CR with your namespace and deployment name, then apply:
+
+```sh
+# Option 1: Edit and apply directly
+sed -e ‘s/<deployment-name>/comfyui/g’ \
+    -e ‘s/<namespace>/<namespace-name>/g’ \
+    config/samples/openshift-comfyui-demo.yaml | oc apply -f -
+
+# Option 2: Use the pre-configured sample (update namespace first)
 oc apply -f config/samples/openshift-comfyui.yaml
 ```
 
-See the sample files for GPU, OAuth2, and storage configuration options.
+**9. Verify the deployment:**
 
->**NOTE**: Ensure that the samples has default values to test it out.
+```sh
+# Check operator is running
+oc get all -n <namespace-name>
+
+# Check CRD is installed
+oc get crd | grep comfyui
+
+# Check ComfyUI instance
+oc get comfyui -n <namespace-name>
+
+# Check all resources created by the operator
+oc get deployment,service,pvc,route -n <namespace-name>
+```
+
+**Complete example with `comfyui-demo` namespace:**
+
+```sh
+oc create namespace comfyui-demo
+make install
+cd config/default && kustomize edit set namespace comfyui-demo && cd ../..
+export OCP_REGISTRY=$(oc get route default-route -n openshift-image-registry --template=’{{ .spec.host }}’)
+podman login $OCP_REGISTRY -u $(oc whoami) -p $(oc whoami -t)
+make docker-build docker-push IMG=$OCP_REGISTRY/comfyui-demo/comfyui-operator:latest CONTAINER_TOOL=podman
+make deploy IMG=$OCP_REGISTRY/comfyui-demo/comfyui-operator:latest
+podman build -t comfyui-cpu:latest -f test-image/Dockerfile test-image/
+podman tag comfyui-cpu:latest $OCP_REGISTRY/comfyui-demo/comfyui-cpu:latest
+podman push $OCP_REGISTRY/comfyui-demo/comfyui-cpu:latest
+oc create secret generic oauth2-client-secret --from-literal=client-secret=<your-secret> -n comfyui-demo
+sed -e ‘s/<deployment-name>/comfyui/g’ -e ‘s/<namespace>/comfyui-demo/g’ config/samples/openshift-comfyui-demo.yaml | oc apply -f -
+oc get all -n comfyui-demo
+oc get comfyui -n comfyui-demo
+```
 
 **Optional: Deploy vLLM-Omni for accelerated inference**
 
