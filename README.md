@@ -328,6 +328,69 @@ kubectl port-forward svc/<comfyui-service-name> 4180:4180
 
 ComfyUI and filebrowser can be accesses from http://localhost:8188, and from http://localhost:4180 respectively 
 
+## Multi-Tenant Provisioning
+
+The `provision-tenant.sh` script automates the creation of isolated ComfyUI tenants with all necessary resources. It's ideal for multi-tenant environments where each team or user needs their own ComfyUI instance with separate namespaces, resource quotas, and authentication.
+
+### Quick Start
+
+**Before using the script**, edit the configuration section at the top of `provision-tenant.sh`:
+
+1. Set `OAUTH2_CLIENT_ID` to your OAuth2 client ID (or leave empty to disable OAuth)
+2. Set `DEFAULT_IMAGE` to your ComfyUI container image
+3. Replace all `comfy.example.com` references with your actual CRD API group
+4. Update `.example.com` domain references to match your organization
+
+**Basic usage:**
+
+```sh
+# Simple CPU tenant
+./provision-tenant.sh marketing
+
+# GPU-enabled tenant with custom storage
+./provision-tenant.sh data-science --gpu --gpu-count 2 --storage 100Gi
+
+# Custom configuration
+./provision-tenant.sh research --gpu --custom-image registry/comfyui:v2.0 \
+  --domain research.example.com --email researcher@example.com \
+  --cpu-limit 4000m --mem-limit 16Gi
+```
+
+### What It Creates
+
+The script provisions a complete isolated environment:
+
+- **Namespace**: `tenant-<name>` with labels for management
+- **RBAC**: Role and RoleBinding for tenant self-service
+- **Resource Quota**: Limits on CPU, memory, GPU, and PVCs to prevent resource exhaustion
+- **OAuth2 Secret**: Client secret for authentication (optional)
+- **ComfyUI CR**: The custom resource with your specified configuration
+- **Cross-namespace permissions**: Image pull permissions if using OpenShift internal registry
+
+### Key Options
+
+| Option | Description |
+|--------|-------------|
+| `--gpu` | Enable GPU support (adds `nvidia.com/gpu` resource limits) |
+| `--gpu-count N` | Number of GPUs per pod (default: 1) |
+| `--storage SIZE` | PVC size (default: 50Gi) |
+| `--replicas N` | Number of ComfyUI replicas (default: 1) |
+| `--domain DOMAIN` | OAuth2 allowed email domain |
+| `--email EMAIL` | OAuth2 allowed email (can specify multiple) |
+| `--no-oauth` | Disable OAuth2 authentication |
+| `--dry-run` | Preview resources without creating them |
+
+Run `./provision-tenant.sh --help` for the complete list of options.
+
+### Multi-Tenant Workflow
+
+1. Configure the script once with your environment-specific values
+2. Provision tenants as needed: `./provision-tenant.sh <tenant-name> [options]`
+3. Grant users access: `oc adm groups add-users tenant-<name>-admins <username>`
+4. Users can manage their ComfyUI instances via `kubectl/oc` within their namespace
+5. Clean up: `kubectl delete namespace tenant-<name>`
+
+The script includes an interactive confirmation prompt and displays all configuration before proceeding. Use `--dry-run` to preview YAML without applying changes.
 
 **TODOS**
 
